@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """Console script for tg-up."""
+import json
 import os
 
 import click
@@ -12,6 +13,7 @@ from tg_up.config import default_config, CONFIG_FILE
 from tg_up.download_files import KeepDownloadSplitFiles, JoinDownloadSplitFiles
 from tg_up.exceptions import catch
 from tg_up.upload_files import NoDirectoriesFiles, RecursiveFiles, NoLargeFiles, SplitFiles, is_valid_file
+from tg_up.url_parser import parse_telegram_url, parse_ids_string, has_media, get_media_type
 from tg_up.utils import async_to_sync, amap, sync_to_async_iterator
 
 
@@ -193,6 +195,23 @@ def upload(files, to, config, delete_on_success, print_file_id, force_file, forw
         client.send_files(to, files, delete_on_success, print_file_id, forward, reply_to=reply_to)
 
 
+def _print_raw_json(message, entity=None):
+    file = message.file
+    data = {
+        "type": get_media_type(message),
+        "id": message.id,
+        "chat_id": message.chat_id,
+        "size": file.size if file else None,
+        "mime_type": file.mime_type if file else None,
+        "file_name": file.name if file else None,
+        "duration": file.duration if file else None,
+        "width": file.width if file else None,
+        "height": file.height if file else None,
+        "date": str(message.date),
+    }
+    click.echo(json.dumps(data))
+
+
 @click.command()
 @click.option('--from', '-f', 'from_', default='',
               help='Phone number, username, chat id or "me" (saved messages). By default "me".')
@@ -206,31 +225,93 @@ def upload(files, to, config, delete_on_success, print_file_id, force_file, forw
               help='Defines how to download large files split in Telegram. By default the files are not merged.')
 @click.option('-i', '--interactive', is_flag=True,
               help='Use interactive mode.')
-def download(from_, config, delete_on_success, proxy, split_files, interactive):
-    """Download all the latest messages that are files in a chat, by default download
-    from "saved messages". It is recommended to forward the files to download to
-    "saved messages" and use parameter ``--delete-on-success``. Forwarded messages will
-    be removed from the chat after downloading, such as a download queue.
+@click.option('-u', '--url', multiple=True,
+              help='Download specific message(s) by URL. Supports ranges: '
+                   'https://t.me/c/123/456/789-792. Mutually exclusive with --from.')
+@click.option('--ids', '-id', 'ids_', default='',
+              help='Download message IDs from the chat specified with --from. '
+                   'Supports ranges: "1-5,10,15-20".')
+@click.option('--raw', is_flag=True,
+              help='Instead of downloading, print JSON metadata for each message.')
+def download(from_, config, delete_on_success, proxy, split_files, interactive, url, ids_, raw):
+    """Download files from Telegram using your personal account.
+
+    By default, downloads all latest file messages from "saved messages".
+    Use --url to download specific messages by their Telegram URL,
+    or --from + --ids to download specific message IDs from a chat.
     """
     client = TelegramManagerClient(config or default_config(), proxy=proxy)
     client.start()
-    if not interactive and not from_:
-        from_ = 'me'
-    elif isinstance(from_, str)  and from_.lstrip("-+").isdigit():
-        from_ = int(from_)
-    elif interactive and not from_:
-        click.echo('Select the dialog of the files to download:')
-        click.echo('[SPACE] Select dialog [ENTER] Next step')
-        from_ = async_to_sync(interactive_select_dialog(client))
-    if interactive:
-        click.echo('Select all files to download:')
-        click.echo('[SPACE] Select files [ENTER] Download selected files')
-        messages = async_to_sync(interactive_select_files(client, from_))
+
+    if url and from_:
+        raise click.UsageError("--url is mutually exclusive with --from")
+
+    if url:
+        messages = []
+        entity = None
+        for url_str in url:
+            chat_info, msg_ids = parse_telegram_url(url_str)
+            if isinstance(chat_info, int):
+                entity = client.get_entity(int(f"-100{chat_info}"))
+            else:
+                entity = client.get_entity(chat_info)
+            batch = client.get_messages(entity, ids=msg_ids)
+            for msg in batch:
+                if msg and has_media(msg):
+                    messages.append(msg)
+                else:
+                    click.echo(f"Skipping msg {msg.id}: not a media file", err=True)
+        messages.sort(key=lambda m: m.id)
+        if not raw:
+            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
+            client.download_files(entity, download_files, delete_on_success)
+        else:
+            for msg in messages:
+                _print_raw_json(msg, entity)
+
+    elif ids_:
+        if not from_:
+            raise click.UsageError("--ids requires --from")
+        ids_list = parse_ids_string(ids_)
+        if isinstance(from_, str) and from_.lstrip("-+").isdigit():
+            from_ = int(from_)
+        entity = client.get_entity(from_)
+        batch = client.get_messages(entity, ids=ids_list)
+        messages = [m for m in batch if m and has_media(m)]
+        if not messages:
+            click.echo("No downloadable media found for the given IDs.", err=True)
+            return
+        messages.sort(key=lambda m: m.id)
+        if not raw:
+            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
+            client.download_files(entity, download_files, delete_on_success)
+        else:
+            for msg in messages:
+                _print_raw_json(msg, entity)
+
     else:
-        messages = client.find_files(from_)
-    messages_cls = DOWNLOAD_SPLIT_FILE_MODES[split_files]
-    download_files = messages_cls(reversed(list(messages)))
-    client.download_files(from_, download_files, delete_on_success)
+        if not interactive and not from_:
+            from_ = 'me'
+        elif isinstance(from_, str) and from_.lstrip("-+").isdigit():
+            from_ = int(from_)
+        elif interactive and not from_:
+            click.echo('Select the dialog of the files to download:')
+            click.echo('[SPACE] Select dialog [ENTER] Next step')
+            from_ = async_to_sync(interactive_select_dialog(client))
+        if interactive:
+            click.echo('Select all files to download:')
+            click.echo('[SPACE] Select files [ENTER] Download selected files')
+            messages = async_to_sync(interactive_select_files(client, from_))
+        else:
+            messages = client.find_files(from_)
+        if raw:
+            entity = client.get_entity(from_)
+            for msg in messages:
+                _print_raw_json(msg, entity)
+        else:
+            messages_cls = DOWNLOAD_SPLIT_FILE_MODES[split_files]
+            download_files = messages_cls(reversed(list(messages)))
+            client.download_files(from_, download_files, delete_on_success)
 
 
 upload_cli = catch(upload)
