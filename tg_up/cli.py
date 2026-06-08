@@ -43,9 +43,9 @@ class IterableDialogList(_DialogList):
         self.show_numbers = False
 
     async def _init(self, values: Sequence[Tuple[_T, AnyFormattedText]]) -> None:
+        self._load_lock = asyncio.Lock()
         started_values = await aislice(values, PAGE_SIZE)
 
-        # started_values = await aislice(values, PAGE_SIZE)
         if not started_values:
             raise IndexError('Values is empty.')
         self.values = started_values
@@ -65,8 +65,9 @@ class IterableDialogList(_DialogList):
         @kb.add("down")
         def _down(event: E) -> None:
             async def handler(event):
-                if self._selected_index + 1 >= len(self.values):
-                    self.values.extend(await aislice(values, PAGE_SIZE))
+                async with self._load_lock:
+                    if self._selected_index + 1 >= len(self.values):
+                        self.values.extend(await aislice(values, PAGE_SIZE))
                 self._selected_index = min(len(self.values) - 1, self._selected_index + 1)
             asyncio.get_event_loop().create_task(async_handler(handler, event))
 
@@ -81,9 +82,9 @@ class IterableDialogList(_DialogList):
         @kb.add("pagedown")
         def _pagedown(event: E) -> None:
             async def handler(event):
-                w = event.app.layout.current_window
-                if self._selected_index + len(w.render_info.displayed_lines) >= len(self.values):
-                    self.values.extend(await aislice(values, PAGE_SIZE))
+                async with self._load_lock:
+                    if self._selected_index + len(w.render_info.displayed_lines) >= len(self.values):
+                        self.values.extend(await aislice(values, PAGE_SIZE))
                 if w.render_info:
                     self._selected_index = min(
                         len(self.values) - 1,
