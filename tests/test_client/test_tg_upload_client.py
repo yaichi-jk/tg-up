@@ -72,7 +72,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
         mock_files = [MagicMock(), MagicMock()]
         self.client.send_files_as_album(entity, mock_files)
         mock_send_files.assert_called_once_with(
-            entity, tuple(mock_files), False, False, (), send_as_media=True
+            entity, tuple(mock_files), False, False, (), send_as_media=True, reply_to=None
         )
         mock_send_album_media.assert_called_once_with(entity, mock_send_files.return_value)
 
@@ -88,7 +88,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             self.client.send_one_file(entity, file, False, None)
             self.client.send_file.assert_called_once_with(
                 entity, file, thumb=None, file_size=file.file_size, caption="logo", force_document=False,
-                progress_callback=AnyArg(), attributes=[]
+                progress_callback=AnyArg(), attributes=[], reply_to=None
             )
         original_send_file_message = self.client._send_file_message
         with self.subTest("Test send one file with one flood retry"), patch('time.sleep') as mock_sleep:
@@ -99,7 +99,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             entity = 'foo'
             file = File(MagicMock(), self.upload_file_path)
             self.client.send_one_file(entity, file, False, None)
-            self.client._send_file_message.assert_has_calls([call(entity, file, None, AnyArg())] * 2)
+            self.client._send_file_message.assert_has_calls([call(entity, file, None, AnyArg(), reply_to=None)] * 2)
             mock_sleep.assert_called_once_with(wait)
         with self.subTest("Test send one file with rpcError"):
             self.client._send_file_message = MagicMock()
@@ -107,7 +107,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             entity = 'foo'
             file = File(MagicMock(), self.upload_file_path)
             self.client.send_one_file(entity, file, False, None, 3)
-            self.client._send_file_message.assert_has_calls([call(entity, file, None, AnyArg())] * 3)
+            self.client._send_file_message.assert_has_calls([call(entity, file, None, AnyArg(), reply_to=None)] * 3)
 
     def test_send_files(self):
         with self.subTest("Test send files"):
@@ -117,7 +117,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             self.client.send_file.assert_called_once_with(
                 entity, file, thumb=None, file_size=file.file_size,
                 caption=os.path.basename(self.upload_file_path).split('.')[0], force_document=False,
-                progress_callback=AnyArg(), attributes=[],
+                progress_callback=AnyArg(), attributes=[], reply_to=None,
             )
         with self.subTest("Test send files with thumb"), \
                 patch.object(File, "get_thumbnail", return_value="thumb.jpg"), \
@@ -129,7 +129,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             self.client.send_file.assert_called_with(
                 entity, file, thumb="thumb.jpg", file_size=file.file_size,
                 caption=os.path.basename(self.upload_file_path).split('.')[0], force_document=False,
-                progress_callback=AnyArg(), attributes=[],
+                progress_callback=AnyArg(), attributes=[], reply_to=None,
             )
             mock_os.remove.assert_called_once_with("thumb.jpg")
         with self.subTest("Test send files with delete mode"), patch('os.remove') as mock_remove:
@@ -138,7 +138,7 @@ class TestTelegramUploadClient(IsolatedAsyncioTestCase):
             self.client.send_file.assert_called_with(
                 entity, file, thumb=None, file_size=file.file_size,
                 caption=os.path.basename(self.upload_file_path).split('.')[0], force_document=False,
-                progress_callback=AnyArg(), attributes=[],
+                progress_callback=AnyArg(), attributes=[], reply_to=None,
             )
             mock_remove.assert_called_once_with(self.upload_file_path)
 
