@@ -30,9 +30,17 @@ class IterableDialogList(_DialogList):
     many = False
 
     def __init__(self, values: Sequence[Tuple[_T, AnyFormattedText]]) -> None:
+        self.open_character = ""
+        self.select_character = "*"
+        self.close_character = ""
         self.container_style = ""
+        self.default_style = ""
+        self.selected_style = ""
+        self.checked_style = ""
+        self.number_style = ""
         self.show_scrollbar = True
         self.multiple_selection = self.many
+        self.show_numbers = False
 
     async def _init(self, values: Sequence[Tuple[_T, AnyFormattedText]]) -> None:
         started_values = await aislice(values, PAGE_SIZE)

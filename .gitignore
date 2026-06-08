@@ -1,1 +1,9 @@
-*.egg-info/\n__pycache__/\n.env\nvenv/\n.venv/\ndist/\nbuild/\n*.pyc\n.DS_Store
+*.egg-info/
+__pycache__/
+.env
+venv/
+.venv/
+dist/
+build/
+*.pyc
+.DS_Store
