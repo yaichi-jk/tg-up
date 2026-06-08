@@ -300,8 +300,7 @@ class FilePath(FileMixin, Path):
     def __new__(cls, *args, **kwargs):
         if cls is FilePath:
             cls = WindowsFilePath if os.name == 'nt' else PosixFilePath
-        self = object.__new__(cls)
-        return self
+        return super().__new__(cls, *args, **kwargs)
 
 
 class WindowsFilePath(FileMixin, WindowsPath):
