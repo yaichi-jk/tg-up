@@ -8,7 +8,7 @@ To **install 🔧 tg-up**, run this command in your terminal:
 
 .. code-block:: console
 
-    $ pip install tg-up
+    $ pip install yaichi-tg
 
 Or from source:
 
