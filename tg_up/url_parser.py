@@ -37,6 +37,13 @@ def parse_telegram_url(url: str):
             start, end = end, start
         return username, list(range(start, end + 1))
 
+    m = re.match(r'^t\.me/(\+|joinchat/)([\w]+)$', url)
+    if m:
+        raise ValueError("Telegram invite links do not contain message IDs")
+
+    if url.startswith('t.me/c/'):
+        raise ValueError("Invalid chat ID in private Telegram URL (must be numeric)")
+
     raise ValueError(f"Could not parse Telegram URL: {url.strip()}")
 
 

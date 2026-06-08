@@ -58,8 +58,14 @@ class TestParseTelegramURL(unittest.TestCase):
             parse_telegram_url("https://t.me/+abc123")
 
     def test_invalid_url_joinchat(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             parse_telegram_url("https://t.me/joinchat/abc123")
+        self.assertIn("invite link", str(ctx.exception))
+
+    def test_invalid_url_plus(self):
+        with self.assertRaises(ValueError) as ctx:
+            parse_telegram_url("https://t.me/+abc123")
+        self.assertIn("invite link", str(ctx.exception))
 
     def test_invalid_url_c_without_number(self):
         with self.assertRaises(ValueError):

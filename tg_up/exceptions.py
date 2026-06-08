@@ -4,6 +4,16 @@
 import sys
 
 import click
+from telethon.errors import (
+    ChatIdInvalidError,
+    ChannelPrivateError,
+    MessageIdInvalidError,
+    UsernameNotOccupiedError,
+    UsernameInvalidError,
+    PeerIdInvalidError,
+    ChannelInvalidError,
+    ChatInvalidError,
+)
 
 from tg_up.config import prompt_config
 
@@ -62,6 +72,25 @@ class TelegramEnvironmentError(TelegramUploadError):
     error_code = 31
 
 
+TELEGRAM_FETCH_ERROR_MESSAGES = {
+    ChatIdInvalidError: "Invalid chat ID. Make sure the chat/channel exists.",
+    ChannelPrivateError: "Cannot access the channel/group. Make sure you are a member and it exists.",
+    MessageIdInvalidError: "Invalid message ID(s). The message may have been deleted or never existed.",
+    UsernameNotOccupiedError: "Invalid username. No user/channel with that username exists.",
+    UsernameInvalidError: "The provided username is invalid.",
+    PeerIdInvalidError: "Invalid peer/chat ID. Make sure the ID is correct.",
+    ChannelInvalidError: "Invalid channel. Make sure the channel exists.",
+    ChatInvalidError: "Invalid chat. Make sure the chat exists.",
+}
+
+
+def format_telethon_error(exception):
+    for exc_cls, msg in TELEGRAM_FETCH_ERROR_MESSAGES.items():
+        if isinstance(exception, exc_cls):
+            return msg
+    return None
+
+
 def catch(fn):
     def wrap(*args, **kwargs):
         try:
@@ -73,4 +102,15 @@ def catch(fn):
         except TelegramUploadError as e:
             sys.stderr.write('[Error] tg-up Exception:\n{}\n'.format(e))
             exit(e.error_code)
+        except Exception as e:
+            tele_msg = format_telethon_error(e)
+            if tele_msg:
+                sys.stderr.write('[Error] {}\n'.format(tele_msg))
+            else:
+                msg = str(e)
+                if 'No user has' in msg or 'Cannot find any entity' in msg:
+                    sys.stderr.write('[Error] Could not resolve entity: {}\n'.format(msg))
+                else:
+                    sys.stderr.write('[Error] {}\n'.format(msg))
+            exit(1)
     return wrap
