@@ -301,7 +301,7 @@ class FilePath(FileMixin, Path):
         if cls is FilePath:
             cls = WindowsFilePath if os.name == 'nt' else PosixFilePath
         self = object.__new__(cls)
-        self.__init__(*args, **kwargs)
+        Path.__init__(self, *args, **kwargs)
         return self
 
 
