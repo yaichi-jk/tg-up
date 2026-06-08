@@ -12,8 +12,8 @@ AUTHOR = "yaichi-jk"
 EMAIL = ''
 URL = 'https://github.com/yaichi-jk/tg-up/'
 
-PACKAGE_NAME = 'tg-up'
-PACKAGE_DOWNLOAD_URL = 'https://github.com/yaichi-jk/tg-up/archive/master.zip'
+PACKAGE_NAME = 'yaichi-tg'
+PACKAGE_DOWNLOAD_URL = 'https://github.com/yaichi-jk/tg-up/archive/main.zip'
 MODULE = 'tg_up'
 REQUIREMENT_FILE = 'requirements.txt'
 STATUS_LEVEL = 4  # 1:Planning 2:Pre-Alpha 3:Alpha 4:Beta 5:Production/Stable 6:Mature 7:Inactive
