@@ -13,12 +13,11 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install tox-gh-actions wheel twine
+          python -m pip install --upgrade pip setuptools wheel build twine
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
       - name: Create packages
         run: |
-          python setup.py sdist bdist_wheel
+          python -m build
       - name: Check packages
         run: |
           twine check dist/*

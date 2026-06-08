@@ -28,7 +28,7 @@ NATURAL_LANGUAGE = 'English'
 PLATFORMS = [
     'linux',
 ]
-PYTHON_VERSIONS = ['3.7-3.9', '3.10', '3.11', '3.12', '3.13']
+PYTHON_VERSIONS = ['3.9', '3.10', '3.11', '3.12', '3.13']
 
 
 def read_requirement_file(path):
