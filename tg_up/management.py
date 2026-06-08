@@ -254,8 +254,10 @@ def _print_raw_json(message, entity=None):
               help='Download message IDs from the chat specified with --from. '
                    'Supports ranges: "1-5,10,15-20".')
 @click.option('--raw', is_flag=True,
-              help='Instead of downloading, print JSON metadata for each message.')
-def download(from_, config, delete_on_success, proxy, split_files, interactive, url, ids_, raw):
+              help='Print JSON metadata for each message (no download).')
+@click.option('--raw-dl', is_flag=True,
+              help='Print JSON metadata AND download files.')
+def download(from_, config, delete_on_success, proxy, split_files, interactive, url, ids_, raw, raw_dl):
     """Download files from Telegram using your personal account.
 
     By default, downloads all latest file messages from "saved messages".
@@ -267,6 +269,11 @@ def download(from_, config, delete_on_success, proxy, split_files, interactive, 
 
     if url and from_:
         raise click.UsageError("--url is mutually exclusive with --from")
+    if raw and raw_dl:
+        raise click.UsageError("--raw and --raw-dl are mutually exclusive")
+
+    do_raw = raw or raw_dl
+    do_download = not raw
 
     if url:
         messages = []
@@ -284,12 +291,12 @@ def download(from_, config, delete_on_success, proxy, split_files, interactive, 
                 else:
                     click.echo(f"Skipping msg {msg.id}: not a media file", err=True)
         messages.sort(key=lambda m: m.id)
-        if not raw:
-            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
-            client.download_files(entity, download_files, delete_on_success)
-        else:
+        if do_raw:
             for msg in messages:
                 _print_raw_json(msg, entity)
+        if do_download:
+            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
+            client.download_files(entity, download_files, delete_on_success)
 
     elif ids_:
         if not from_:
@@ -304,12 +311,12 @@ def download(from_, config, delete_on_success, proxy, split_files, interactive, 
             click.echo("No downloadable media found for the given IDs.", err=True)
             return
         messages.sort(key=lambda m: m.id)
-        if not raw:
-            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
-            client.download_files(entity, download_files, delete_on_success)
-        else:
+        if do_raw:
             for msg in messages:
                 _print_raw_json(msg, entity)
+        if do_download:
+            download_files = DOWNLOAD_SPLIT_FILE_MODES[split_files](messages)
+            client.download_files(entity, download_files, delete_on_success)
 
     else:
         if not interactive and not from_:
@@ -326,11 +333,11 @@ def download(from_, config, delete_on_success, proxy, split_files, interactive, 
             messages = async_to_sync(interactive_select_files(client, from_))
         else:
             messages = client.find_files(from_)
-        if raw:
+        if do_raw:
             entity = client.get_entity(from_)
             for msg in messages:
                 _print_raw_json(msg, entity)
-        else:
+        if do_download:
             messages_cls = DOWNLOAD_SPLIT_FILE_MODES[split_files]
             download_files = messages_cls(reversed(list(messages)))
             client.download_files(from_, download_files, delete_on_success)
