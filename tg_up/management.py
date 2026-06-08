@@ -201,14 +201,36 @@ def _print_raw_json(message, entity=None):
         "type": get_media_type(message),
         "id": message.id,
         "chat_id": message.chat_id,
-        "size": file.size if file else None,
-        "mime_type": file.mime_type if file else None,
-        "file_name": file.name if file else None,
-        "duration": file.duration if file else None,
-        "width": file.width if file else None,
-        "height": file.height if file else None,
         "date": str(message.date),
+        "caption": message.text,
+        "sender_id": message.sender_id,
+        "reply_to_msg_id": message.reply_to_msg_id,
+        "grouped_id": message.grouped_id,
+        "out": message.out,
+        "post": message.post,
+        "via_bot_id": message.via_bot_id,
     }
+    if file:
+        data["file"] = {
+            "id": file.id,
+            "name": file.name,
+            "ext": file.ext,
+            "mime_type": file.mime_type,
+            "size": file.size,
+            "duration": file.duration,
+            "width": file.width,
+            "height": file.height,
+            "title": file.title,
+            "performer": file.performer,
+            "emoji": file.emoji,
+        }
+    if message.forward:
+        fwd = message.forward
+        data["forward"] = {
+            "sender_id": fwd.sender_id,
+            "chat_id": fwd.chat_id,
+            "date": str(fwd.date) if hasattr(fwd, 'date') else None,
+        }
     click.echo(json.dumps(data))
 
 
