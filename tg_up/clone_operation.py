@@ -114,6 +114,8 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
                 break
 
     has_thumb = _has_thumb(doc)
+    display_name = orig_filename or f'msg {message.id}'
+    file_size = message.file.size if message.file else 0
 
     suffix = f'_{orig_filename}' if orig_filename else '_clone'
 
@@ -126,12 +128,12 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
             thumb_path = tmp_thumb.name
 
     try:
-        progress, bar = get_progress_bar('Downloading', str(message.id), message.file.size)
+        dl_progress, dl_bar = get_progress_bar('Downloading', display_name, file_size)
         downloaded = await client.download_media(message, file=tmp_path,
-                                                  progress_callback=progress)
-        bar.label = f'Downloaded  msg {message.id}'
-        bar.update(1, 1)
-        bar.render_finish()
+                                                  progress_callback=dl_progress)
+        dl_bar.label = f'Downloaded  {display_name}'
+        dl_bar.update(1, 1)
+        dl_bar.render_finish()
 
         file_path = downloaded if isinstance(downloaded, str) else tmp_path
 
@@ -142,10 +144,13 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
             except Exception:
                 thumb_path = None
 
+        ul_progress, ul_bar = get_progress_bar('Uploading', display_name, file_size)
+
         send_kwargs = dict(
             caption=caption,
             formatting_entities=entities,
             parse_mode=None,
+            progress_callback=ul_progress,
         )
         if orig_attributes:
             send_kwargs['attributes'] = orig_attributes
@@ -154,7 +159,13 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
         if thumb_path:
             send_kwargs['thumb'] = thumb_path
 
-        result = await client.send_file(dest, file_path, **send_kwargs)
+        try:
+            result = await client.send_file(dest, file_path, **send_kwargs)
+        finally:
+            ul_bar.label = f'Uploaded    {display_name}'
+            ul_bar.update(1, 1)
+            ul_bar.render_finish()
+
         return result
     finally:
         if not keep_files:
