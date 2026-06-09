@@ -166,7 +166,11 @@ class TestCloneMessage(unittest.TestCase):
         client.send_file.side_effect = [Exception('direct copy failed'), 'ok']
         client.download_media.return_value = '/tmp/downloaded_file'
         media = MagicMock(spec=MessageMediaDocument)
-        msg = _make_message(media=media, text='caption', id=4, file_size=500)
+        media.document = MagicMock()
+        media.document.mime_type = 'video/mp4'
+        media.document.attributes = [DocumentAttributeFilename('video.mp4')]
+        msg = _make_message(media=media, text='caption', id=4, file_size=500,
+                            has_document=True)
 
         with patch('tg_up.clone_operation.tempfile.NamedTemporaryFile') as mock_tmp, \
              patch('tg_up.clone_operation.os.unlink'):
@@ -177,6 +181,10 @@ class TestCloneMessage(unittest.TestCase):
         self.assertEqual(result['method'], 'fallback_download_upload')
         client.download_media.assert_awaited_once()
         self.assertEqual(client.send_file.await_count, 2)
+        # verify attributes and mime_type were passed
+        call_kwargs = client.send_file.call_args[1]
+        self.assertEqual(call_kwargs.get('mime_type'), 'video/mp4')
+        self.assertIsNotNone(call_kwargs.get('attributes'))
 
     def test_no_fallback_returns_failed(self):
         client = self._make_client()

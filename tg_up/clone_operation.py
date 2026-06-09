@@ -7,6 +7,7 @@ from telethon.tl.types import (
     MessageMediaWebPage, MessageMediaUnsupported, MessageMediaDice,
     MessageMediaGeo, MessageMediaGeoLive, MessageMediaContact,
     MessageMediaVenue,
+    DocumentAttributeFilename,
 )
 
 from tg_up.client.progress_bar import get_progress_bar
@@ -84,7 +85,27 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
     caption = message.raw_text or ''
     entities = message.entities or None
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='_clone') as tmp:
+    orig_filename = None
+    orig_attributes = None
+    orig_mime_type = None
+
+    doc = None
+    if isinstance(message.media, MessageMediaDocument):
+        doc = message.media.document
+    elif hasattr(message.media, 'document') and message.media.document:
+        doc = message.media.document
+
+    if doc:
+        orig_mime_type = doc.mime_type
+        orig_attributes = list(doc.attributes) if doc.attributes else None
+        for attr in doc.attributes or []:
+            if isinstance(attr, DocumentAttributeFilename):
+                orig_filename = attr.file_name
+                break
+
+    suffix = f'_{orig_filename}' if orig_filename else '_clone'
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp_path = tmp.name
 
     try:
@@ -97,12 +118,17 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
 
         file_path = downloaded if isinstance(downloaded, str) else tmp_path
 
-        result = await client.send_file(
-            dest, file_path,
+        send_kwargs = dict(
             caption=caption,
             formatting_entities=entities,
             parse_mode=None,
         )
+        if orig_attributes:
+            send_kwargs['attributes'] = orig_attributes
+        if orig_mime_type:
+            send_kwargs['mime_type'] = orig_mime_type
+
+        result = await client.send_file(dest, file_path, **send_kwargs)
         return result
     finally:
         if not keep_files:

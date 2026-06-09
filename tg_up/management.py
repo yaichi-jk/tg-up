@@ -196,43 +196,164 @@ def upload(files, to, config, delete_on_success, print_file_id, force_file, forw
         client.send_files(to, files, delete_on_success, print_file_id, forward, reply_to=reply_to)
 
 
-def _print_raw_json(message, entity=None):
+def _raw_forward_info(fwd):
+    if not fwd:
+        return None
+    info = {}
+    for attr in ('sender_id', 'sender_name', 'chat_id', 'chat_title',
+                 'date', 'post_author', 'flags', 'from_id',
+                 'channel_post', 'imported', 'psa_type',
+                 'saved_from_peer', 'saved_from_id',
+                 'saved_from_msg_id', 'signature'):
+        val = getattr(fwd, attr, None)
+        if val is not None:
+            info[attr] = str(val) if hasattr(val, 'isoformat') else val
+    return info if info else None
+
+
+def _raw_document_attributes(doc):
+    if not doc or not doc.attributes:
+        return None
+    attrs = []
+    for a in doc.attributes:
+        attr_type = type(a).__name__
+        adata = {'_type': attr_type}
+        for f in ('file_name', 'duration', 'w', 'h', 'title', 'performer',
+                   'voice', 'round_message', 'supports_streaming', 'nosound',
+                   'alt', 'mask', 'preload_prefix_size', 'video_start_ts',
+                   'video_codec'):
+            if hasattr(a, f):
+                val = getattr(a, f)
+                if val is not None:
+                    adata[f] = str(val) if isinstance(val, bytes) else val
+        attrs.append(adata)
+    return attrs
+
+
+def _raw_file_info(message):
     file = message.file
-    data = {
-        "type": get_media_type(message),
-        "id": message.id,
-        "chat_id": message.chat_id,
-        "date": str(message.date),
-        "caption": message.text,
-        "sender_id": message.sender_id,
-        "reply_to_msg_id": message.reply_to_msg_id,
-        "grouped_id": message.grouped_id,
-        "out": message.out,
-        "post": message.post,
-        "via_bot_id": message.via_bot_id,
+    if not file:
+        return None
+    info = {
+        'id': file.id,
+        'name': file.name,
+        'ext': file.ext,
+        'mime_type': file.mime_type,
+        'size': file.size,
+        'duration': file.duration,
+        'width': file.width,
+        'height': file.height,
+        'title': file.title,
+        'performer': file.performer,
+        'emoji': file.emoji,
     }
-    if file:
-        data["file"] = {
-            "id": file.id,
-            "name": file.name,
-            "ext": file.ext,
-            "mime_type": file.mime_type,
-            "size": file.size,
-            "duration": file.duration,
-            "width": file.width,
-            "height": file.height,
-            "title": file.title,
-            "performer": file.performer,
-            "emoji": file.emoji,
+    for attr in ('dc_id', 'sticker_alt', 'sticker_set'):
+        if hasattr(file, attr):
+            info[attr] = getattr(file, attr)
+    doc = getattr(message.media, 'document', None) if message.media else None
+    if doc:
+        info['document_attributes'] = _raw_document_attributes(doc)
+    return info
+
+
+def _raw_media_info(message):
+    media = message.media
+    if not media:
+        return None
+    info = {'_type': type(media).__name__}
+
+    if hasattr(media, 'photo') and media.photo:
+        p = media.photo
+        info['photo_id'] = p.id
+        info['photo_dc_id'] = p.dc_id
+        if hasattr(p, 'sizes') and p.sizes:
+            info['photo_sizes'] = [
+                {'type': s.type, 'w': s.w, 'h': s.h}
+                for s in p.sizes if hasattr(s, 'type')
+            ]
+
+    doc = getattr(media, 'document', None) if hasattr(media, 'document') else None
+    if doc:
+        dinfo = {
+            'id': doc.id,
+            'size': doc.size,
+            'mime_type': doc.mime_type,
         }
-    if message.forward:
-        fwd = message.forward
-        data["forward"] = {
-            "sender_id": fwd.sender_id,
-            "chat_id": fwd.chat_id,
-            "date": str(fwd.date) if hasattr(fwd, 'date') else None,
+        if hasattr(doc, 'dc_id'):
+            dinfo['dc_id'] = doc.dc_id
+        doc_attrs = _raw_document_attributes(doc)
+        if doc_attrs:
+            dinfo['attributes'] = doc_attrs
+        info['document'] = dinfo
+
+    if hasattr(media, 'geo') and media.geo:
+        g = media.geo
+        info['geo'] = {'lat': g.lat, 'long': g.long}
+
+    if hasattr(media, 'address') and media.address:
+        info['address'] = media.address
+
+    if hasattr(media, 'title') and media.title:
+        info['title'] = media.title
+
+    if hasattr(media, 'first_name') and media.first_name:
+        info['first_name'] = media.first_name
+    if hasattr(media, 'last_name') and media.last_name:
+        info['last_name'] = media.last_name
+    if hasattr(media, 'phone_number') and media.phone_number:
+        info['phone_number'] = media.phone_number
+    if hasattr(media, 'vcard') and media.vcard:
+        info['vcard'] = media.vcard
+
+    if hasattr(media, 'quiz') and media.quiz is not None:
+        info['quiz'] = media.quiz
+
+    return info
+
+
+def _print_raw_json(message, entity=None):
+    data = {
+        'type': get_media_type(message),
+        'id': message.id,
+        'chat_id': message.chat_id,
+        'date': str(message.date),
+        'caption': message.text,
+        'caption_entities': [
+            {'type': e.__class__.__name__, 'offset': e.offset, 'length': e.length}
+            for e in (message.entities or [])
+        ] if message.entities else None,
+        'sender_id': message.sender_id,
+        'reply_to_msg_id': message.reply_to_msg_id,
+        'grouped_id': message.grouped_id,
+        'out': message.out,
+        'post': message.post,
+        'via_bot_id': message.via_bot_id,
+        'edited': message.edit_date is not None,
+        'edit_date': str(message.edit_date) if message.edit_date else None,
+        'pinned': message.pinned,
+        'silent': message.silent,
+        'mentioned': message.mentioned,
+        'from_scheduled': message.from_scheduled,
+        'legacy': message.legacy,
+        'ttl_period': message.ttl_period,
+    }
+    file_info = _raw_file_info(message)
+    if file_info:
+        data['file'] = file_info
+    media_info = _raw_media_info(message)
+    if media_info:
+        data['media'] = media_info
+    fwd_info = _raw_forward_info(message.forward)
+    if fwd_info:
+        data['forward'] = fwd_info
+    if entity:
+        data['entity'] = {
+            'id': entity.id,
+            'title': getattr(entity, 'title', None) or getattr(entity, 'username', None),
+            'username': getattr(entity, 'username', None),
+            'type': type(entity).__name__,
         }
-    click.echo(json.dumps(data))
+    click.echo(json.dumps(data, default=str))
 
 
 @click.command()
