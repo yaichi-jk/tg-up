@@ -281,6 +281,13 @@ def _raw_media_info(message):
         }
         if hasattr(doc, 'dc_id'):
             dinfo['dc_id'] = doc.dc_id
+        for thumb_attr in ('thumbs', 'video_thumbs'):
+            if hasattr(doc, thumb_attr) and getattr(doc, thumb_attr):
+                dinfo[thumb_attr] = [
+                    {'type': getattr(t, 'type', None), 'w': getattr(t, 'w', None),
+                     'h': getattr(t, 'h', None), 'size': getattr(t, 'size', None)}
+                    for t in getattr(doc, thumb_attr)
+                ]
         doc_attrs = _raw_document_attributes(doc)
         if doc_attrs:
             dinfo['attributes'] = doc_attrs

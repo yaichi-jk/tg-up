@@ -81,6 +81,16 @@ async def _try_direct_copy(client, message, dest):
         )
 
 
+def _has_thumb(doc):
+    if not doc:
+        return False
+    if hasattr(doc, 'thumbs') and doc.thumbs:
+        return True
+    if hasattr(doc, 'video_thumbs') and doc.video_thumbs:
+        return True
+    return False
+
+
 async def _fallback_download_upload(client, message, dest, keep_files=False):
     caption = message.raw_text or ''
     entities = message.entities or None
@@ -103,10 +113,17 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
                 orig_filename = attr.file_name
                 break
 
+    has_thumb = _has_thumb(doc)
+
     suffix = f'_{orig_filename}' if orig_filename else '_clone'
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp_path = tmp.name
+
+    thumb_path = None
+    if has_thumb:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='_thumb') as tmp_thumb:
+            thumb_path = tmp_thumb.name
 
     try:
         progress, bar = get_progress_bar('Downloading', str(message.id), message.file.size)
@@ -118,6 +135,13 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
 
         file_path = downloaded if isinstance(downloaded, str) else tmp_path
 
+        if has_thumb and thumb_path:
+            try:
+                dl_thumb = await client.download_media(message, file=thumb_path, thumb=-1)
+                thumb_path = dl_thumb if isinstance(dl_thumb, str) and os.path.isfile(dl_thumb) else thumb_path
+            except Exception:
+                thumb_path = None
+
         send_kwargs = dict(
             caption=caption,
             formatting_entities=entities,
@@ -127,6 +151,8 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
             send_kwargs['attributes'] = orig_attributes
         if orig_mime_type:
             send_kwargs['mime_type'] = orig_mime_type
+        if thumb_path:
+            send_kwargs['thumb'] = thumb_path
 
         result = await client.send_file(dest, file_path, **send_kwargs)
         return result
@@ -136,6 +162,11 @@ async def _fallback_download_upload(client, message, dest, keep_files=False):
                 os.unlink(tmp_path)
             except OSError:
                 pass
+            if thumb_path:
+                try:
+                    os.unlink(thumb_path)
+                except OSError:
+                    pass
 
 
 async def _forward_message(client, message, dest):
