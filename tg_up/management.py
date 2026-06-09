@@ -13,6 +13,7 @@ from tg_up.config import default_config, CONFIG_FILE
 from tg_up.download_files import KeepDownloadSplitFiles, JoinDownloadSplitFiles
 from tg_up.exceptions import catch
 from tg_up.upload_files import NoDirectoriesFiles, RecursiveFiles, NoLargeFiles, SplitFiles, is_valid_file
+from tg_up.clone_operation import clone_message
 from tg_up.url_parser import parse_telegram_url, parse_ids_string, has_media, get_media_type
 from tg_up.utils import async_to_sync, amap, sync_to_async_iterator
 
@@ -343,15 +344,141 @@ def download(from_, config, delete_on_success, proxy, split_files, interactive, 
             client.download_files(from_, download_files, delete_on_success)
 
 
+@click.command()
+@click.option('--from', '-f', 'from_', default='',
+              help='Source chat: phone, username, chat id or "me". By default "me".')
+@click.option('--to', '-t', required=True,
+              help='Destination chat: phone, username or chat id. Required.')
+@click.option('--config', default=None, help='Configuration file to use. By default "{}".'.format(CONFIG_FILE))
+@click.option('-p', '--proxy', default=None,
+              help='Use an http proxy, socks4, socks5 or mtproxy.')
+@click.option('-i', '--interactive', is_flag=True,
+              help='Use interactive mode to select source dialog and files.')
+@click.option('-u', '--url', multiple=True,
+              help='Clone specific message(s) by Telegram URL. Mutually exclusive with --from.')
+@click.option('--ids', '-id', 'ids_', default='',
+              help='Clone message IDs from the source chat. Supports ranges: "1-5,10,15-20".')
+@click.option('--forward', is_flag=True,
+              help='Forward instead of clone (preserves original sender attribution).')
+@click.option('--no-fallback', is_flag=True,
+              help='Fail if direct copy does not work (no download+upload fallback).')
+@click.option('--keep-files', is_flag=True,
+              help='Do not delete temporary files downloaded in fallback mode.')
+@click.option('--dry-run', is_flag=True,
+              help='Show what would be cloned without actually cloning.')
+def clone(from_, to, config, proxy, interactive, url, ids_, forward, no_fallback, keep_files, dry_run):
+    """Clone messages from one chat to another.
+
+    By default tries to copy media in-server (fast), with automatic
+    fallback to download+upload if the media is not directly accessible.
+    """
+    client = TelegramManagerClient(config or default_config(), proxy=proxy)
+    client.start()
+
+    dest = to
+    if isinstance(dest, str) and dest.lstrip("-+").isdigit():
+        dest = int(dest)
+    dest_entity = client.get_entity(dest)
+
+    if url and from_:
+        raise click.UsageError("--url is mutually exclusive with --from")
+
+    if url:
+        messages = []
+        entity = None
+        for url_str in url:
+            chat_info, msg_ids = parse_telegram_url(url_str)
+            if isinstance(chat_info, int):
+                entity = client.get_entity(int(f"-100{chat_info}"))
+            else:
+                entity = client.get_entity(chat_info)
+            batch = client.get_messages(entity, ids=msg_ids)
+            for msg in batch:
+                if msg:
+                    messages.append(msg)
+                else:
+                    click.echo(f"Skipping msg: not found (may have been deleted)", err=True)
+        messages.sort(key=lambda m: m.id)
+
+    elif ids_:
+        if not from_:
+            raise click.UsageError("--ids requires --from")
+        ids_list = parse_ids_string(ids_)
+        if isinstance(from_, str) and from_.lstrip("-+").isdigit():
+            from_ = int(from_)
+        entity = client.get_entity(from_)
+        batch = client.get_messages(entity, ids=ids_list)
+        messages = [m for m in batch if m]
+        if not messages:
+            click.echo("No messages found for the given IDs.", err=True)
+            return
+        messages.sort(key=lambda m: m.id)
+
+    else:
+        if not interactive and not from_:
+            from_ = 'me'
+        elif isinstance(from_, str) and from_.lstrip("-+").isdigit():
+            from_ = int(from_)
+        elif interactive and not from_:
+            click.echo('Select the source dialog:')
+            click.echo('[SPACE] Select dialog [ENTER] Next step')
+            from_ = async_to_sync(interactive_select_dialog(client))
+        entity = from_
+        if interactive:
+            click.echo('Select all files to clone:')
+            click.echo('[SPACE] Select files [ENTER] Clone selected files')
+            messages = async_to_sync(interactive_select_files(client, from_))
+        else:
+            messages = client.find_files(from_)
+
+    if not messages:
+        click.echo("No messages to clone.", err=True)
+        return
+
+    total = 0
+    succeeded = 0
+    failed = 0
+    skipped = 0
+
+    click.echo(f"Cloning {len(messages)} message(s) to \"{to}\"...")
+
+    for i, msg in enumerate(messages, 1):
+        result = async_to_sync(clone_message(
+            client, msg, dest_entity,
+            forward=forward,
+            no_fallback=no_fallback,
+            keep_files=keep_files,
+            dry_run=dry_run,
+        ))
+        total += 1
+
+        if result['status'] == 'ok':
+            succeeded += 1
+            click.echo(f"[{i}/{len(messages)}] Cloning msg {result['id']} ({result['type']}) -> OK")
+        elif result['status'] == 'would_clone':
+            click.echo(f"[{i}/{len(messages)}] WOULD clone msg {result['id']} ({result['type']}) via {result['method']}")
+        elif result['status'] == 'skipped':
+            skipped += 1
+            click.echo(f"[{i}/{len(messages)}] Skipping msg {result['id']} ({result['type']}): {result['reason']}",
+                       err=True)
+        else:
+            failed += 1
+            click.echo(f"[{i}/{len(messages)}] FAILED msg {result['id']} ({result['type']}): {result['reason']}",
+                       err=True)
+
+    click.echo(f"Done. {succeeded} cloned, {skipped} skipped, {failed} failed of {total} total.")
+
+
 upload_cli = catch(upload)
 download_cli = catch(download)
+clone_cli = catch(clone)
 
 
 if __name__ == '__main__':
     import sys
     import re
     sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
-    commands = {'upload': upload_cli, 'download': download_cli}
+    commands = {'upload': upload_cli, 'download': download_cli, 'clone': clone_cli}
     if len(sys.argv) < 2:
         sys.stderr.write('A command is required. Available commands: {}\n'.format(
             ', '.join(commands)

@@ -123,6 +123,7 @@ setup(
         "console_scripts": [
             "tg-up = tg_up.management:upload_cli",
             "tg-dw = tg_up.management:download_cli",
+            "tg-clone = tg_up.management:clone_cli",
         ],
     },
 
